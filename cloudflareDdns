@@ -1,0 +1,122 @@
+#!/bin/sh
+
+export Global_API_Key
+export login_email
+export zone_id
+export rec_id
+export lest_ip
+arIp6QueryUrl="https://6.ipw.cn"
+arIp4QueryUrl="https://4.ipw.cn"
+
+
+# 检查环境是否有jq
+check_environment(){
+	echo '检查JQ'
+	if command -v jq; then
+		echo "jq 命令可用"
+	else
+		echo "jq 命令不可用，请安装jq"
+		
+fi
+}
+
+# 获取IPV4地址
+get_ipv4(){
+hostIp=$(curl $arIp4QueryUrl)
+echo $hostIp
+return $?
+}
+
+# 获取IPV6地址
+get_ipv6(){
+hostIp=$(curl $arIp6QueryUrl)
+echo $hostIp
+return $?
+}
+
+# 检查token
+check_token(){
+echo 'check_token'
+res=$(curl -s -X GET "https://api.cloudflare.com/client/v4/user" \
+     -H "X-Auth-Email: $login_email" \
+     -H "X-Auth-Key: $Global_API_Key" \
+     -H "Content-Type: application/json"|jq -r ".success")
+if [ "$res" = "true" ]
+	then
+		echo 'token正确，继续更新dns'
+		return 0
+else
+	echo "token无法登录,请更新token"
+	exit                                                               
+fi
+}
+
+
+
+# 获取zone_id
+get_zone_id(){
+zone_id=$(curl -X GET "https://api.cloudflare.com/client/v4/zones?name=$1" \
+    -H "X-Auth-Email: $login_email" \
+    -H "X-Auth-Key: $Global_API_Key" \
+    -H "Content-Type:application/json" | jq -r ".result[0].id")
+echo $zone_id
+
+}
+
+
+# # 获取rec_id
+get_rec_result(){
+# echo "https://api.cloudflare.com/client/v4/zones/$1/dns_records?type=$2&name=$3.$4"
+res=$(curl -X GET "https://api.cloudflare.com/client/v4/zones/$1/dns_records?type=$2&name=$3.$4" \
+     -H "X-Auth-Email: $login_email" \
+     -H "X-Auth-Key: $Global_API_Key" \
+     -H "Content-Type: application/json" )
+echo $res
+rec_id=$(echo $res |jq -r '.result[].id')
+lest_ip=$(echo $res |jq -r '.result[].content')
+}
+# 更新记录
+# get_last_ip(){
+update_content(){
+curl -X PUT "https://api.cloudflare.com/client/v4/zones/$1/dns_records/$2" \
+     -H "X-Auth-Email: $login_email" \
+     -H "X-Auth-Key: $Global_API_Key" \
+     -H "Content-Type: application/json" \
+     --data '{"type":"$3","name":"$4.$5","content":"$6","ttl":3600,"proxied":false,"comment":"Domain verification record","tags":["owner:dns-team"]}'
+}
+
+
+# 检查dns解析
+cloudflardCheck(){
+
+	if  [ "$3" = "6" ]; then
+		recordType=AAAA
+		hostIp=$(get_ipv6)
+	else
+		recordType=A
+		hostIp=$(get_ipv4)
+	fi
+	
+	echo get zone_id
+	zone_id=$(get_zone_id $1)
+	echo zone_id
+	get_rec_result $zone_id $recordType $2 $1
+
+	echo 'start'
+	echo $zone_id
+	echo $rec_id
+	echo $lest_ip
+	echo $hostIp
+	echo 'end'
+	if [ "$lest_ip" = "$hostIp" ];then
+		echo 'identical'
+	else
+		echo 'Different'
+		update_content $zone_id $rec_id $recordType $2 $1 $hostIp
+	echo 'end'
+	fi
+	
+	
+	
+	
+}
