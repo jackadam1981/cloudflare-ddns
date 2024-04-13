@@ -207,7 +207,8 @@ function compare() {
     host_ip=$(eval echo '$'${config_nic_name}_${config_type})
     if [[ $config_proxy != $record_proxy || $record_ip != $host_ip ]]; then
         update
-
+    else
+        jaLog "No upgrade $FQDN_name"
     fi
 }
 
