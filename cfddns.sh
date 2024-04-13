@@ -265,6 +265,9 @@ function check_records() {
 # check domain
 function check_domain() {
 
+    # read config
+    config=$(cat cfconf.json | jq)
+
     domain_size=$(echo $config | jq .config | jq length)
     domain_int=0
     while [ $domain_int -lt $domain_size ]; do
@@ -296,7 +299,7 @@ function main() {
 
     # test debug log
     # debug 'this is main funciont'
-    # jaLog 'this is log test'
+    jaLog 'this is cloudflare ddns script'
 
     # Check the environment
     check_env 'jq'
@@ -304,9 +307,6 @@ function main() {
     debug 'check all over'
     # Check the config
     check_config
-
-    # read config
-    config=$(cat cfconf.json | jq)
 
     # Check the Domain
     check_domain
