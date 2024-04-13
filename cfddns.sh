@@ -206,6 +206,11 @@ function compare() {
     debug 'Compare records'
     host_ip=$(eval echo '$'${config_nic_name}_${config_type})
     if [[ $config_proxy != $record_proxy || $record_ip != $host_ip ]]; then
+        jaLog "record porxy set:$record_proxy "
+        jaLog "config porxy set:$config_proxy "
+        jaLog "host_ip:$host_ip "
+        jaLog "record_ip:$record_ip "
+
         update
     else
         jaLog "No upgrade $FQDN_name"
@@ -248,7 +253,7 @@ function check_records() {
         # debug record_info: $record_info
         record_id=$(echo $record_info | jq -r '.result[0].id')
         record_ip=$(echo $record_info | jq -r '.result[0].content')
-        record_proxy=$(echo $record_info | jq -r '.result[0].proxiable')
+        record_proxy=$(echo $record_info | jq -r '.result[0].proxied')
 
         get_host_ip
 
