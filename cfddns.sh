@@ -313,3 +313,8 @@ function main() {
 }
 
 main
+
+#  read logs command
+
+#   journalctl --no-pager --since today -g 'jaDDNS'
+#   logread -e jaDDNS
