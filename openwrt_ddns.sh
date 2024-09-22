@@ -17,32 +17,37 @@ while getopts "c:" opt; do
     esac
 done
 
+
 # Log function
 log() {
     local level=$1
     local message=$2
-    echo "[$level] $message"
     case $log_level in
     "debug")
+        echo "[$level] $message"
         logger -t "$log_header_name" "[$level] $message"
         ;;
     "info")
         if [ "$level" != "debug" ]; then
+            echo "[$level] $message"
             logger -t "$log_header_name" "[$level] $message"
         fi
         ;;
     "warn")
         if [ "$level" = "warn" ] || [ "$level" = "error" ] || [ "$level" = "fatal" ]; then
+            echo "[$level] $message"
             logger -t "$log_header_name" "[$level] $message"
         fi
         ;;
     "error")
         if [ "$level" = "error" ] || [ "$level" = "fatal" ]; then
+            echo "[$level] $message"
             logger -t "$log_header_name" "[$level] $message"
         fi
         ;;
     "fatal")
         if [ "$level" = "fatal" ]; then
+            echo "[$level] $message"
             logger -t "$log_header_name" "[$level] $message"
         fi
         ;;
@@ -152,7 +157,7 @@ check_auth_key() {
     auth_key_valid=$(echo "$config" | jq -r ".domains[$domain_int].auth_key_valid")
 
     if [ "$auth_key_valid" = "true" ]; then
-        log "debug" "auth_key for domain $domain_int is already valid, skipping verification."
+        log "debug" "auth_key for domain $((domain_int + 1)) is already valid, skipping verification."
         return
     fi
 
@@ -217,10 +222,10 @@ check_config() {
     else
         config='{
     "settings": {
-        "log-level": "info,log "debug",error",
+        "log_level": "debug,info",
         "arIp6QueryUrl": "https://6.ipw.cn",
         "arIp4QueryUrl": "https://4.ipw.cn",
-        "log_header_name": "jaDDNS"
+        "log_header_name": "DDNS"
     },
     "domains": [
         {
@@ -362,13 +367,14 @@ check_records() {
 
     config_size=$(echo "$config" | jq ".domains[$domain_int].records | length")
 
-    log "info" "records_size: $config_size"
+    
 
     if [ -z "$config_size" ] || [ "$config_size" -eq 0 ]; then
         log_and_exit "No records found for domain $domain_int."
     fi
 
     for config_int in $(seq 0 $((config_size - 1))); do
+        log "info" "records: $((config_int + 1))/$config_size"
         config_name=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].name")
         config_type=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].type")
         config_proxy=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].proxy")
@@ -376,9 +382,16 @@ check_records() {
         config_nic_name=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].nic_name")
         FQDN_name="$config_name.$domain_name"
 
+        log "debug" "config_name: $config_name"
+        log "debug" "config_type: $config_type"
+        log "debug" "config_proxy: $config_proxy"
+        log "debug" "config_static: $config_static"
+        log "debug" "config_nic_name: $config_nic_name"
+        log "debug" "FQDN_name: $FQDN_name"
         # 获取记录信息
         record_info=$(get_record_info "$zone_id" "$FQDN_name" "$config_type" "$auth_email" "$auth_key")
 
+        log "debug" "record_info:$record_info"
         if [ -z "$record_info" ]; then
             log "warn" "Record $FQDN_name does not exist, creating..."
             host_ip=$(get_host_ip "$config_type" "$config_nic_name" "$arIp6QueryUrl" "$arIp4QueryUrl")
@@ -409,7 +422,6 @@ check_records() {
     done
 }
 
-# 主函数
 main() {
     check_environment
     check_config
@@ -417,7 +429,7 @@ main() {
     config_size=$(echo "$config" | jq ".domains | length")
     domain_int=0
 
-    log "info" "domains_size: $config_size"
+    log "debug" "config_size: $config_size"
     log "debug" "domain_int: $domain_int"
 
     if [ -z "$config_size" ] || [ "$config_size" -eq 0 ]; then
@@ -425,6 +437,7 @@ main() {
     fi
 
     for domain_int in $(seq 0 $((config_size - 1))); do
+        log "info" "domains:$((domain_int + 1))/$config_size"
         domain_name=$(echo "$config" | jq -r ".domains[$domain_int].domain_name")
         zone_id=$(echo "$config" | jq -r ".domains[$domain_int].zone_id")
         auth_key=$(echo "$config" | jq -r ".domains[$domain_int].auth_key")
@@ -439,7 +452,6 @@ main() {
             zone_id=$(get_zone_id "$domain_name" "$auth_key")
             log "debug" "Fetched zone_id: $zone_id"
             config=$(echo "$config" | jq ".domains[$domain_int] |= . + {zone_id: \"$zone_id\"}")
-            # echo $config | jq .
             echo "$config" | jq . >"$CONFIG_FILE"
         fi
 
@@ -448,3 +460,7 @@ main() {
 }
 
 main
+
+# 查看日志
+#  journalctl --no-pager --since today -g 'jaDDNS'
+#  logread -e jaDDNS
