@@ -181,17 +181,34 @@ check_auth_key() {
     echo "$config" | jq . >"$CONFIG_FILE"
 }
 
-# 获取主机 IP 的函数
+# ... existing code ...
+
+# 检查是否支持 declare 命令
+if command -v declare >/dev/null 2>&1; then
+    declare -A ip_cache
+    use_cache=true
+else
+    use_cache=false
+fi
+
 get_host_ip() {
     local config_type=$1
     local config_nic_name=$2
     local arIp6QueryUrl=$3
     local arIp4QueryUrl=$4
-    local source=$5
+    local config_local=$5
 
+    local cache_key="${config_type}_${config_nic_name}_${config_local}"
     local ip_address
 
-    if [ "$source" = "local" ]; then
+    if [ "$use_cache" = true ] && [ -n "${ip_cache[$cache_key]}" ]; then
+        log "debug" "Using cached IP for $cache_key" >&2
+        echo "${ip_cache[$cache_key]}"
+        return
+    fi
+
+    log "debug" "function get_host_ip" >&2
+    if [ "$config_local" = "true" ]; then
         if [ "$config_type" = "AAAA" ]; then
             ip_address=$(ip -6 addr show "$config_nic_name" | grep 'inet6' | awk '{print $2}' | cut -d/ -f1 | grep -vE "$(arLanIp6)" | head -n 1)
         else
@@ -205,10 +222,15 @@ get_host_ip() {
         fi
     fi
 
-    log "debug" "Fetched $source $config_type address for $config_nic_name: $ip_address" >&2
+    log "debug" "Fetched $config_local $config_type address for $config_nic_name: $ip_address" >&2
+
+    if [ "$use_cache" = true ]; then
+        ip_cache[$cache_key]=$ip_address
+    fi
 
     echo "$ip_address"
 }
+
 # 检查配置的函数
 check_config() {
     if [ -f "$CONFIG_FILE" ]; then
@@ -239,14 +261,14 @@ check_config() {
                     "name": "subdomain1",
                     "type": "A",
                     "proxy": false,
-                    "static": true,
+                    "local": true,
                     "nic_name": "eth0"
                 },
                 {
                     "name": "subdomain2",
                     "type": "AAAA",
                     "proxy": true,
-                    "static": false,
+                    "local": false,
                     "nic_name": "eth0"
                 }
             ]
@@ -262,7 +284,7 @@ check_config() {
                     "name": "subdomain3",
                     "type": "A",
                     "proxy": false,
-                    "static": true,
+                    "local": true,
                     "nic_name": "eth1"
                 }
             ]
@@ -367,8 +389,6 @@ check_records() {
 
     config_size=$(echo "$config" | jq ".domains[$domain_int].records | length")
 
-    
-
     if [ -z "$config_size" ] || [ "$config_size" -eq 0 ]; then
         log_and_exit "No records found for domain $domain_int."
     fi
@@ -378,14 +398,14 @@ check_records() {
         config_name=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].name")
         config_type=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].type")
         config_proxy=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].proxy")
-        config_static=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].static")
+        config_local=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].local")
         config_nic_name=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].nic_name")
         FQDN_name="$config_name.$domain_name"
 
         log "debug" "config_name: $config_name"
         log "debug" "config_type: $config_type"
         log "debug" "config_proxy: $config_proxy"
-        log "debug" "config_static: $config_static"
+        log "debug" "config_local: $config_local"
         log "debug" "config_nic_name: $config_nic_name"
         log "debug" "FQDN_name: $FQDN_name"
         # 获取记录信息
@@ -394,7 +414,7 @@ check_records() {
         log "debug" "record_info:$record_info"
         if [ -z "$record_info" ]; then
             log "warn" "Record $FQDN_name does not exist, creating..."
-            host_ip=$(get_host_ip "$config_type" "$config_nic_name" "$arIp6QueryUrl" "$arIp4QueryUrl")
+            host_ip=$(get_host_ip "$config_type" "$config_nic_name" "$arIp6QueryUrl" "$arIp4QueryUrl" "$config_local")
             create_record "$zone_id" "$auth_email" "$auth_key" "$FQDN_name" "$config_type" "$host_ip" "$config_proxy"
         else
 
@@ -402,15 +422,7 @@ check_records() {
             record_ip=$(echo "$record_info" | jq -r '.content')
             record_proxy=$(echo "$record_info" | jq -r '.proxied')
 
-            if [ "$config_static" = "true" ]; then
-                host_ip=$(get_host_ip "$config_type" "$config_nic_name" "$arIp6QueryUrl" "$arIp4QueryUrl")
-            else
-                if [ "$config_type" = "AAAA" ]; then
-                    host_ip=$(curl -s "$arIp6QueryUrl" | grep -vE "$(arLanIp6)")
-                else
-                    host_ip=$(curl -s "$arIp4QueryUrl" | grep -vE "$(arLanIp4)")
-                fi
-            fi
+            host_ip=$(get_host_ip "$config_type" "$config_nic_name" "$arIp6QueryUrl" "$arIp4QueryUrl" "$config_local")
 
             if [ "$host_ip" != "$record_ip" ] || [ "$config_proxy" != "$record_proxy" ]; then
                 log "info" "IP $host_ip or proxy setting has changed for $FQDN_name, updating record..."
