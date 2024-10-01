@@ -214,15 +214,17 @@ get_host_ip() {
         else
             ip_address=$(ip -4 addr show "$config_nic_name" | grep 'inet' | awk '{print $2}' | cut -d/ -f1 | grep -vE "$(arLanIp4)" | head -n 1)
         fi
+		log "debug" "Fetched local $config_type address for $config_nic_name: $ip_address" >&2
     else
         if [ "$config_type" = "AAAA" ]; then
             ip_address=$(curl -s "$arIp6QueryUrl" | grep -vE "$(arLanIp6)")
         else
             ip_address=$(curl -s "$arIp4QueryUrl" | grep -vE "$(arLanIp4)")
         fi
+		log "debug" "Fetched remote $config_type address for $config_nic_name: $ip_address" >&2
     fi
 
-    log "debug" "Fetched $config_local $config_type address for $config_nic_name: $ip_address" >&2
+    
 
     if [ "$use_cache" = true ]; then
         ip_cache[$cache_key]=$ip_address
