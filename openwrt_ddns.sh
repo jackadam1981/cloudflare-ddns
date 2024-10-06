@@ -56,6 +56,7 @@ log() {
 
 # Log and exit function
 log_and_exit() {
+	echo "$1"
     log "ERROR" "$1"
     exit 1
 }
