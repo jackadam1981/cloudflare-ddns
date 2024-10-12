@@ -1,7 +1,10 @@
 #!/bin/sh
 
-# 配置文件名，默认值为 "cfconf.json"
-CONFIG_FILE="cfconf.json"
+# 获取当前脚本的目录路径 / Get the directory path of the current script
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+
+# 配置文件路径，默认值为 "cfconf.json" / Configuration file path, default is "cfconf.json"
+CONFIG_FILE="$SCRIPT_DIR/cfconf.json"
 
 
 # 解析命令行参数
@@ -397,14 +400,14 @@ check_records() {
     fi
 
     for config_int in $(seq 0 $((config_size - 1))); do
-        log "info" "records: $((config_int + 1))/$config_size"
+        
         config_name=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].name")
         config_type=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].type")
         config_proxy=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].proxy")
         config_local=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].local")
         config_nic_name=$(echo "$config" | jq -r ".domains[$domain_int].records[$config_int].nic_name")
         FQDN_name="$config_name.$domain_name"
-
+		log "info" "records: $((config_int + 1))/$config_size $config_type $FQDN_name"
         log "debug" "config_name: $config_name"
         log "debug" "config_type: $config_type"
         log "debug" "config_proxy: $config_proxy"
@@ -452,11 +455,11 @@ main() {
     fi
 
     for domain_int in $(seq 0 $((config_size - 1))); do
-        log "info" "domains:$((domain_int + 1))/$config_size"
+        
         domain_name=$(echo "$config" | jq -r ".domains[$domain_int].domain_name")
         zone_id=$(echo "$config" | jq -r ".domains[$domain_int].zone_id")
         auth_key=$(echo "$config" | jq -r ".domains[$domain_int].auth_key")
-
+		log "info" "domains:$((domain_int + 1))/$config_size $domain_name" 
         log "debug" "domain_name: $domain_name"
         log "debug" "zone_id: $zone_id"
         log "debug" "auth_key: $auth_key"
@@ -477,5 +480,5 @@ main() {
 main
 
 # 查看日志
-#  journalctl --no-pager --since today -g 'jaDDNS'
-#  logread -e jaDDNS
+#  journalctl --no-pager --since today -g 'DDNS'
+#  logread -e DDNS
