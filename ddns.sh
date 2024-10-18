@@ -481,4 +481,6 @@ main
 
 # 查看日志
 #  journalctl --no-pager --since today -g 'DDNS'
+#  journalctl --no-pager --since today |grep 'DDNS'
 #  logread -e DDNS
+#  version:241018
