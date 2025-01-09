@@ -25,8 +25,35 @@ done
 log() {
     local level=$1
     local message=$2
-    if [ "$level" = "debug" ] || [ "$level" = "info" ] || [ "$level" = "warn" ] || [ "$level" = "error" ] || [ "$level" = "fatal" ]; then
-        echo "[$level] $message"
+    local current_log_level="info" # 默认日志级别为 info
+
+    # 从配置中获取日志级别
+    if [ -n "$log_level" ]; then
+        current_log_level="$log_level"
+    fi
+
+    # 定义日志级别的优先级
+    case $current_log_level in
+    debug) current_log_level_num=1 ;;
+    info) current_log_level_num=2 ;;
+    warn) current_log_level_num=3 ;;
+    error) current_log_level_num=4 ;;
+    fatal) current_log_level_num=5 ;;
+    *) current_log_level_num=2 ;; # 默认 info
+    esac
+
+    case $level in
+    debug) level_num=1 ;;
+    info) level_num=2 ;;
+    warn) level_num=3 ;;
+    error) level_num=4 ;;
+    fatal) level_num=5 ;;
+    *) level_num=2 ;; # 默认 info
+    esac
+
+    # 只有当当前日志级别允许时才输出日志信息
+    if [ "$level_num" -ge "$current_log_level_num" ]; then
+        echo "[$level] $message" >&2
         logger -t "$log_header_name" "[$level] $message"
     fi
 }
@@ -68,6 +95,7 @@ check_environment() {
 
 # 检查配置的函数
 check_config() {
+    log "debug" "function--------- check_config"
     if [ -f "$CONFIG_FILE" ]; then
         log "debug" "Configuration file exists, start running"
         config=$(jq . "$CONFIG_FILE")
@@ -133,28 +161,48 @@ check_config() {
 
 # 获取域名数量
 get_domain_size() {
+    log "debug" "function--------- get_domain_size"
     domain_size=$(echo "$config" | jq ".domains | length")
     log "debug" "in get_domain_size domain_size: $domain_size"
     echo $domain_size
 }
 
-# 优化 make_curl_request 函数
-make_curl_request() {
+# 优化 make_url_request 函数
+make_url_request() {
+    log "debug" "function--------- make_url_request"
     local method=$1
     local url=$2
     local auth_key=$3
     local data=$4
 
     local response
-    if [ "$method" = "GET" ]; then
-        response=$(curl -s -X GET "$url" \
-            -H "Authorization: Bearer $auth_key" \
-            -H "Content-Type: application/json")
+
+    # 检查是否安装了 curl 或 wget
+    if command -v curl >/dev/null 2>&1; then
+        if [ "$method" = "GET" ]; then
+            response=$(curl -s -X GET "$url" \
+                -H "Authorization: Bearer $auth_key" \
+                -H "Content-Type: application/json")
+        else
+            response=$(curl -s -X "$method" "$url" \
+                -H "Authorization: Bearer $auth_key" \
+                -H "Content-Type: application/json" \
+                --data "$data")
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if [ "$method" = "GET" ]; then
+            response=$(wget -qO- --method=GET "$url" \
+                --header="Authorization: Bearer $auth_key" \
+                --header="Content-Type: application/json")
+        else
+            response=$(wget -qO- --method="$method" "$url" \
+                --header="Authorization: Bearer $auth_key" \
+                --header="Content-Type: application/json" \
+                --body-data="$data")
+        fi
     else
-        response=$(curl -s -X "$method" "$url" \
-            -H "Authorization: Bearer $auth_key" \
-            -H "Content-Type: application/json" \
-            --data "$data")
+        log "error" "Neither curl nor wget is installed."
+        exit 1
     fi
 
     if [ $? -ne 0 ]; then
@@ -180,7 +228,7 @@ check_auth_key() {
 
     log "info" "auth_key for $domain_name needs to be validated"
     local url="https://api.cloudflare.com/client/v4/user/tokens/verify"
-    local response=$(make_curl_request "GET" "$url" "$auth_key")
+    local response=$(make_url_request "GET" "$url" "$auth_key")
     local status=$(echo "$response" | jq -r '.result.status')
 
     if [ "$status" = "active" ]; then
@@ -207,7 +255,7 @@ check_zone_id() {
         log "info" "zone_id for $domain_name is not exist"
         # 获取 zone_id
         local url="https://api.cloudflare.com/client/v4/zones?name=$domain_name"
-        response=$(make_curl_request "GET" "$url" "$auth_key")
+        response=$(make_url_request "GET" "$url" "$auth_key")
         zone_id=$(echo "$response" | jq -r '.result[0].id')
         log "info" "in response zone_id: $zone_id"
         if [ "$zone_id" = "null" ] || [ -z "$zone_id" ]; then
@@ -232,8 +280,8 @@ get_record_info() {
     local fqdn_name="$record_name.$domain_name"
     local auth_key=$(echo "$config" | jq -r ".domains[$domain_int].auth_key")
     local url="https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?type=$record_type&name=$fqdn_name"
-    response=$(make_curl_request "GET" "$url" "$auth_key")
-    log "debug" "get_record_info from $url response: $response" >&2
+    response=$(make_url_request "GET" "$url" "$auth_key")
+    log "debug" "get_record_info from $url response: $response"
     echo $response
 }
 
@@ -280,6 +328,7 @@ arLanIp6() {
 
 # 获取本地IP,并过滤私有IP地址
 get_local_ip() {
+    log "debug" "function--------- get_local_ip"
     local record_nic_name=$1
     local record_type=$2
     log "debug" "get_local_ip record_local: $record_local"
@@ -290,12 +339,13 @@ get_local_ip() {
     else
         ip_address=$(ip -4 addr show "$record_nic_name" | grep 'inet' | awk '{print $2}' | cut -d/ -f1 | grep -vE "$(arLanIp4)" | head -n 1)
     fi
-    log "debug" "Fetched local $record_type address for $record_nic_name: $ip_address" >&2
+    log "debug" "Fetched local $record_type address for $record_nic_name: $ip_address"
     echo $ip_address
 }
 
 # 获取公网IP
 get_url_ip() {
+    log "debug" "function--------- get_url_ip"
     local record_type=$1
     local arIp6QueryUrl=$(echo "$config" | jq -r '.settings.arIp6QueryUrl')
     local arIp4QueryUrl=$(echo "$config" | jq -r '.settings.arIp4QueryUrl')
@@ -330,7 +380,7 @@ create_record() {
         comment: $comment,
     }')
     log "info" "create_record $record_name.$domain_name"
-    response=$(make_curl_request "POST" "$url" "$auth_key" "$data")
+    response=$(make_url_request "POST" "$url" "$auth_key" "$data")
     log "debug" "Response from create_record: $response"
 
     if echo "$response" | jq -e '.success' >/dev/null; then
@@ -343,6 +393,7 @@ create_record() {
 
 # 更新cloudflare记录
 update_record() {
+    log "debug" "function--------- update_record"
     local domain_int=$1
     local record_int=$2
     local record_id=$3
@@ -362,7 +413,7 @@ update_record() {
         comment: $comment
     }')
     log "info" "update_record $record_name.$domain_name"
-    response=$(make_curl_request "PUT" "$url" "$auth_key" "$data")
+    response=$(make_url_request "PUT" "$url" "$auth_key" "$data")
     log "debug" "Response for $url update_record: $response"
 
     if echo "$response" | jq -e '.success' >/dev/null; then
@@ -370,15 +421,29 @@ update_record() {
     else
         log_and_exit "Failed to update record $record_name: $(echo "$response" | jq -r '.errors[0].message')"
     fi
+}
 
+# 检查crontab
+check_crontab() {
+    log "debug" "function--------- check_crontab"
+    crontab_output=$(crontab -l 2>/dev/null)
+    echo "Crontab content: $crontab_output" # 调试输出
+    if ! echo "$crontab_output" | grep -q "DDNS"; then
+        log "info" "crontab not exist, add crontab"
+        # 添加crontab,10分钟执行一次
+        (
+            crontab -l 2>/dev/null
+            echo "*/10 * * * * /bin/sh $SCRIPT_DIR/ddns.sh # DDNS"
+        ) | crontab -
+    else
+        log "info" "crontab entry for DDNS already exists"
+    fi
 }
 
 main() {
-
+    check_crontab
     check_environment
-
     check_config
-
     domain_size=$(get_domain_size)
     log "debug" "domain_size: $domain_size"
 
@@ -386,7 +451,7 @@ main() {
     for domain_int in $(seq 0 $((domain_size - 1))); do
         # 获取域名
         domain_name=$(echo "$config" | jq -r ".domains[$domain_int].domain_name")
-        echo "Domains： $((domain_int + 1))/$domain_size $domain_name"
+        log "info" "Domains： $((domain_int + 1))/$domain_size $domain_name"
         # 检查auth_key是否有效
         check_auth_key "$domain_int"
         # 检查zone_id是否存在
@@ -438,9 +503,7 @@ main() {
             else
                 log "info" "$record_name.$domain_name match no need update"
             fi
-
         done
-
     done
 }
 
