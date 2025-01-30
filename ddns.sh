@@ -335,7 +335,7 @@ get_local_ip() {
     log "debug" "get_local_ip record_nic_name: $record_nic_name"
     log "debug" "get_local_ip record_type: $record_type"
     if [ "$record_type" = "AAAA" ]; then
-        ip_address=$(ip -6 addr show "$record_nic_name" | grep 'inet6' | awk '{print $2}' | cut -d/ -f1 | grep -vE "$(arLanIp6)" | head -n 1)
+        ip_address=$(ip -6 addr show "$record_nic_name" | grep 'inet6' | grep -v 'deprecated' | awk '{print $2}' | cut -d/ -f1 | grep -vE "$(arLanIp6)" | head -n 1)
     else
         ip_address=$(ip -4 addr show "$record_nic_name" | grep 'inet' | awk '{print $2}' | cut -d/ -f1 | grep -vE "$(arLanIp4)" | head -n 1)
     fi
@@ -426,8 +426,8 @@ update_record() {
 # 检查crontab
 check_crontab() {
     log "debug" "function--------- check_crontab"
-    crontab_output=$(crontab -l 2>/dev/null)
-    echo "Crontab content: $crontab_output" # 调试输出
+    crontab_output=$(crontab -l 2>/dev/null || echo "")
+    log "debug" "Crontab content: $crontab_output" # 调试输出
     if ! echo "$crontab_output" | grep -q "DDNS"; then
         log "info" "crontab not exist, add crontab"
         # 添加crontab,10分钟执行一次
@@ -444,6 +444,7 @@ main() {
     check_crontab
     check_environment
     check_config
+    
     domain_size=$(get_domain_size)
     log "debug" "domain_size: $domain_size"
 
@@ -515,4 +516,4 @@ main
 #  journalctl --no-pager --since "1 minute ago" | grep 'DDNS'
 #  journalctl --no-pager | grep 'DDNS' | tail -n 10
 #  logread -e DDNS
-#  version:250109
+#  version:250201
