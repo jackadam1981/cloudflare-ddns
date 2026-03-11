@@ -398,6 +398,10 @@ update_record() {
     local record_int=$2
     local record_id=$3
     local local_ip=$4
+	if [ -z "$record_id" ]; then
+        log "error" "update_record called with empty record_id"
+        return 1   # 返回错误，但注意 set -e 会使脚本退出，可考虑用 || true 处理
+    fi
     local zone_id=$(echo "$config" | jq -r ".domains[$domain_int].zone_id")
     local record_name=$(echo "$config" | jq -r ".domains[$domain_int].records[$record_int].name")
     local record_type=$(echo "$config" | jq -r ".domains[$domain_int].records[$record_int].type")
@@ -480,13 +484,12 @@ main() {
             remote_ip=$(echo "$remote_info" | jq -r '.result[0].content')
             remote_proxy=$(echo "$remote_info" | jq -r '.result[0].proxied')
 
-            # 若不存在，则创建记录
-            if [ "$remote_id" = "null" ]; then
-                log "debug" "$record_name.$domain_name not exist"
-                create_record "$domain_int" "$record_int" "$local_ip"
-                #跳出循环
-                break
-            fi
+			# 检查记录是否存在
+			if [ -z "$remote_id" ] || [ "$remote_id" = "null" ]; then
+				log "debug" "$record_name.$domain_name does not exist, creating..."
+				create_record "$domain_int" "$record_int" "$local_ip"
+				continue   # 创建成功，跳过本次记录的更新检查
+			fi
 
             log "debug" "remote_id: $remote_id"
             log "debug" "remote_ip: $remote_ip"
